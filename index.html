@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Image Calendar Widget</title>
+<style>
+  :root { color-scheme: dark; --bg:#15151d; --panel:#20212c; --line:#343644; --text:#f4f4fa; --muted:#9b9cad; --accent:#c9c6ff; }
+  * { box-sizing:border-box; }
+  body { margin:0; padding:18px; background:var(--bg); color:var(--text); font-family:system-ui,-apple-system,"Noto Sans KR",sans-serif; }
+  .wrap { max-width:1100px; margin:0 auto; }
+  header { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; margin-bottom:20px; }
+  .month { display:flex; align-items:center; gap:12px; }
+  h1 { font-size:clamp(23px,4vw,34px); margin:0; letter-spacing:-.04em; }
+  button, input { font:inherit; }
+  button { cursor:pointer; border:1px solid var(--line); color:var(--text); background:var(--panel); border-radius:10px; padding:9px 12px; }
+  button:hover { border-color:var(--accent); }
+  .nav { font-size:22px; width:40px; height:40px; padding:0; }
+  .actions { display:flex; gap:8px; flex-wrap:wrap; }
+  .weekdays,.grid { display:grid; grid-template-columns:repeat(7,minmax(0,1fr)); gap:7px; }
+  .weekdays { margin-bottom:8px; text-align:center; color:var(--muted); font-size:13px; }
+  .day { min-height:140px; min-width:0; border:1px solid var(--line); border-radius:12px; padding:7px; background:rgba(255,255,255,.015); overflow:hidden; }
+  .day.outside { opacity:.38; }
+  .day.today { border-color:var(--accent); box-shadow:inset 0 0 0 1px var(--accent); }
+  .date { color:#c5c6d4; font-size:12px; margin-bottom:7px; }
+  .cards { display:flex; flex-direction:column; gap:7px; }
+  .card { position:relative; display:block; overflow:hidden; border-radius:8px; aspect-ratio:3 / 4; background:#292a36; text-decoration:none; color:white; }
+  .card img { width:100%; height:100%; object-fit:cover; display:block; }
+  .card .shade { position:absolute; inset:35% 0 0; background:linear-gradient(transparent,rgba(0,0,0,.8)); }
+  .card .title { position:absolute; bottom:0; left:0; right:0; padding:7px; font-size:12px; line-height:1.25; font-weight:700; overflow-wrap:anywhere; }
+  .empty { color:#77798a; font-size:11px; text-align:center; padding:8px 0; }
+  .hint { color:var(--muted); font-size:12px; line-height:1.6; margin-top:14px; }
+  dialog { width:min(460px,calc(100% - 28px)); border:1px solid var(--line); border-radius:16px; color:var(--text); background:#20212c; padding:20px; }
+  dialog::backdrop { background:rgba(0,0,0,.65); }
+  dialog h2 { margin:0 0 14px; font-size:20px; }
+  label { display:block; font-size:13px; color:#c8c9d6; margin:12px 0 5px; }
+  input { width:100%; padding:10px; border-radius:9px; border:1px solid var(--line); background:#15151d; color:var(--text); }
+  .form-actions { display:flex; justify-content:flex-end; gap:8px; margin-top:18px; }
+  .primary { background:#d0cdff; color:#171722; border-color:#d0cdff; font-weight:700; }
+  @media(max-width:700px) {
+    body { padding:12px; }
+    .weekdays,.grid { gap:4px; }
+    .day { min-height:100px; padding:4px; border-radius:8px; }
+    .date { font-size:10px; margin-bottom:4px; }
+    .card { border-radius:5px; }
+    .card .title { font-size:9px; padding:4px; }
+    .empty { font-size:9px; }
+  }
+  @media(max-width:430px) {
+    .day { min-height:76px; }
+    .card .title { display:none; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="month">
+      <button class="nav" id="prev" aria-label="이전 달">‹</button>
+      <h1 id="monthLabel">2026.05.</h1>
+      <button class="nav" id="next" aria-label="다음 달">›</button>
+    </div>
+    <div class="actions">
+      <button id="todayBtn">오늘</button>
+      <button id="addBtn">＋ 이미지 추가</button>
+    </div>
+  </header>
+  <div class="weekdays">
+    <div>일</div><div>월</div><div>화</div><div>수</div><div>목</div><div>금</div><div>토</div>
+  </div>
+  <main class="grid" id="calendar"></main>
+  <p class="hint">이미지 카드 캘린더 · ＋ 이미지 추가에서 날짜, 제목, 이미지 URL을 입력하세요. 데이터는 현재 브라우저에 저장됩니다. 이미지는 공개적으로 접근 가능한 이미지 URL을 사용하세요.</p>
+</div>
+
+<dialog id="addDialog">
+  <form id="cardForm">
+    <h2>캘린더에 이미지 추가</h2>
+    <label for="dateInput">날짜</label>
+    <input id="dateInput" type="date" required>
+    <label for="titleInput">제목</label>
+    <input id="titleInput" type="text" maxlength="90" placeholder="예: 보고 싶은 드라마" required>
+    <label for="imageInput">이미지 URL</label>
+    <input id="imageInput" type="url" placeholder="https://..." required>
+    <label for="linkInput">연결할 링크 (선택)</label>
+    <input id="linkInput" type="url" placeholder="https://...">
+    <div class="form-actions">
+      <button type="button" id="cancelBtn">취소</button>
+      <button class="primary" type="submit">추가하기</button>
+    </div>
+  </form>
+</dialog>
+<script>
+(() => {
+  const KEY = 'notion-image-calendar-items-v1';
+  let shown = new Date();
+  shown = new Date(shown.getFullYear(), shown.getMonth(), 1);
+  let items = [];
+  try { items = JSON.parse(localStorage.getItem(KEY) || '[]'); } catch(e) { items = []; }
+  const $ = id => document.getElementById(id);
+  const pad = n => String(n).padStart(2,'0');
+  const iso = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+  const sameMonth = (a,b) => a.getMonth()===b.getMonth() && a.getFullYear()===b.getFullYear();
+
+  function render() {
+    $('monthLabel').textContent = `${shown.getFullYear()}.${pad(shown.getMonth()+1)}.`;
+    const root = $('calendar'); root.replaceChildren();
+    const first = new Date(shown.getFullYear(), shown.getMonth(), 1);
+    const start = new Date(first); start.setDate(first.getDate() - first.getDay());
+    const today = iso(new Date());
+    for (let i=0; i<42; i++) {
+      const date = new Date(start); date.setDate(start.getDate()+i);
+      const cell = document.createElement('section');
+      cell.className = 'day' + (sameMonth(date,shown) ? '' : ' outside') + (iso(date)===today ? ' today' : '');
+      const num = document.createElement('div'); num.className='date'; num.textContent=date.getDate(); cell.appendChild(num);
+      const list = document.createElement('div'); list.className='cards';
+      const dayItems = items.filter(x => x.date === iso(date));
+      dayItems.forEach(item => {
+        const a = document.createElement('a'); a.className='card'; a.href=item.link || '#'; 
+        if (!item.link) a.addEventListener('click', e => e.preventDefault());
+        if (item.link) { a.target='_blank'; a.rel='noopener noreferrer'; }
+        const img = document.createElement('img'); img.src=item.image; img.alt=item.title; img.loading='lazy';
+        img.onerror = () => { img.style.display='none'; a.style.background='#383747'; };
+        const shade=document.createElement('div'); shade.className='shade';
+        const title=document.createElement('div'); title.className='title'; title.textContent=item.title;
+        a.append(img,shade,title);
+        a.title = `${item.title} · 클릭하면 열기 / 우클릭 또는 길게 눌러 삭제`;
+        a.addEventListener('contextmenu', e => { e.preventDefault(); if(confirm(`'${item.title}' 이미지를 삭제할까요?`)){items=items.filter(x=>x.id!==item.id); save(); render();} });
+        list.appendChild(a);
+      });
+      if (!dayItems.length) { const empty=document.createElement('div'); empty.className='empty'; empty.textContent=''; list.appendChild(empty); }
+      cell.appendChild(list); root.appendChild(cell);
+    }
+  }
+  function save(){ localStorage.setItem(KEY, JSON.stringify(items)); }
+  $('prev').addEventListener('click',()=>{shown=new Date(shown.getFullYear(),shown.getMonth()-1,1);render();});
+  $('next').addEventListener('click',()=>{shown=new Date(shown.getFullYear(),shown.getMonth()+1,1);render();});
+  $('todayBtn').addEventListener('click',()=>{const n=new Date();shown=new Date(n.getFullYear(),n.getMonth(),1);render();});
+  $('addBtn').addEventListener('click',()=>{$('dateInput').value=iso(shown);$('addDialog').showModal();});
+  $('cancelBtn').addEventListener('click',()=>$('addDialog').close());
+  $('cardForm').addEventListener('submit',e=>{
+    e.preventDefault();
+    const item={id:Date.now().toString(36)+Math.random().toString(36).slice(2),date:$('dateInput').value,title:$('titleInput').value.trim(),image:$('imageInput').value.trim(),link:$('linkInput').value.trim()};
+    items.push(item); save(); shown=new Date(item.date+'T12:00:00'); shown=new Date(shown.getFullYear(),shown.getMonth(),1);
+    $('cardForm').reset(); $('addDialog').close(); render();
+  });
+  render();
+})();
+</script>
+</body>
+</html>
